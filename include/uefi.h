@@ -1,5 +1,8 @@
 /*
-// Copyright (c) 2021 Hewlett-Packard Development Company, L.P.
+// Copyright (c) 2021-2025 Hewlett Packard Enterprise Development, LP
+// 
+// Hewlett-Packard and the Hewlett-Packard logo are trademarks of
+// Hewlett-Packard Development Company, L.P. in the U.S. and/or other countries.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +17,6 @@
 // limitations under the License.
 */
 
-
 struct GUID
 {
     uint32_t start;
@@ -27,7 +29,13 @@ namespace UEFI
 {
 const char fvSignature[4] = {'_', 'F', 'V', 'H'};
 
-#define ROM_SIZE (32 * 1024 * 1024)
+#define ROM_SIZE (0x4000000)    // 64MB
+
+typedef struct
+{
+    uint32_t NumBlocks;
+    uint32_t Length;
+} EFI_FV_BLOCK_MAP_ENTRY;
 
 struct firmwareVolumeHeader
 {
@@ -41,6 +49,7 @@ struct firmwareVolumeHeader
     uint16_t ExtHeaderOffset;
     unsigned char Reserved;
     unsigned char Revision;
+    EFI_FV_BLOCK_MAP_ENTRY    BlockMap[1];  // added in gen12
 };
 
 #define EFI_FV_FILETYPE_FREEFORM 2

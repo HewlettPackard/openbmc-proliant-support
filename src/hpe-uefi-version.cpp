@@ -1,5 +1,8 @@
 /*
-// Copyright (c) 2021 Hewlett-Packard Development Company, L.P.
+// Copyright (c) 2021-2025 Hewlett Packard Enterprise Development, LP
+// 
+// Hewlett-Packard and the Hewlett-Packard logo are trademarks of
+// Hewlett-Packard Development Company, L.P. in the U.S. and/or other countries.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,6 +30,51 @@
 #include <sstream>      // std::stringstream, std::stringbuf
 
 #include "uefi.h"
+
+std::string getVersion(void *HostBIOSFile, uint32_t size) {
+        std::string version="";
+
+        char *local, *buffer;
+        int convert;
+        int offset = 0;
+        buffer = (char *)malloc(sizeof(char)*size+1);
+        if ( buffer == NULL ) throw "Error: buffer allocation\n";
+        local = (char *)malloc(sizeof(char)*size+1);
+        if ( local == NULL ) throw "Error: local allocation\n";
+
+        memset(local, 0 , size+1);
+        memset(buffer, 0 , size+1);
+
+        memcpy(buffer, HostBIOSFile , size);
+        convert = sscanf(buffer,"%s\n", local);
+        if ( convert <= 0 ) throw "Error: can't convert buffer to string\n";
+
+        while ( convert > 0 ) {
+                offset += strlen(local)+1;
+                memset(local, 0, size+1);
+                if ( ( size - offset ) > 0 )
+                {
+                        char *ptr;
+                        convert = sscanf(buffer+offset,"%[^\n]", local);
+                        if ( convert <= 0 ) 
+			{
+				convert = sscanf(buffer+offset,"%[^\r]", local);
+				if ( convert <= 0 )
+					throw "Error: can't convert buffer to string\n";
+			}
+                        if ( (ptr=strstr(local, "ROM_VER_STR=" )) != NULL )
+				                        {
+                                version = ptr+strlen("ROM_VER_STR=");
+                                break;
+                        }
+                }
+                else
+                        convert = -1;
+        }
+        free(buffer);
+        free(local);
+        return(std::string(version));
+}
 
 std::string get_hpe_uefi_firmware_version(void *hpe_uefi_build_manifest_buffer, size_t file_size)
 {
@@ -81,18 +129,14 @@ int main(int argc, char **argv)
 	}
 
 	mtd_filepath = argv[1];
-	//printf("Parsing %s\n", mtd_filepath.c_str());
 
 	UEFI::UEFIFirmwareImage hpe_uefi_firmware(mtd_filepath);
-	//hpe_uefi_firmware.dumpRomFV();
-	//printf("================================================= \n");
 
 	void *hpe_uefi_build_manifest_buffer = hpe_uefi_firmware.getFileContent(HPE_UEFI_BUILD_MANIFEST_FV);
 	if (hpe_uefi_build_manifest_buffer != NULL)
 	{
 		size = hpe_uefi_firmware.getFileSize(HPE_UEFI_BUILD_MANIFEST_FV);
 		if (size > 0)
-			//printf("Version: %s\n", get_hpe_uefi_firmware_version(hpe_uefi_build_manifest_buffer, size).c_str());
-			printf("%s", get_hpe_uefi_firmware_version(hpe_uefi_build_manifest_buffer, size).c_str());
+			printf("%s", getVersion(hpe_uefi_build_manifest_buffer, size).c_str());
 	}
 }
