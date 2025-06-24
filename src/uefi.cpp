@@ -1,5 +1,8 @@
 /*
-// Copyright (c) 2021 Hewlett-Packard Development Company, L.P.
+// Copyright (c) 2021-2025 Hewlett Packard Enterprise Development, LP
+// 
+// Hewlett-Packard and the Hewlett-Packard logo are trademarks of
+// Hewlett-Packard Development Company, L.P. in the U.S. and/or other countries.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -69,7 +72,10 @@ UEFI::FVFile::FVFile(const char* bfr, long offset)
             myHeader.Size[2] << 16 | myHeader.Size[1] << 8 | myHeader.Size[0];
         // Let's go to the next entry
         fileOffset = fileOffset + _Size + sizeof(struct sectionHeader);
-        fileOffset = (fileOffset + (8 - 1)) & -8;
+	_GUID = GUIDtoChar(myfile.fileID);
+
+	fileOffset = (fileOffset + (fileOffset % 8)) & -8  ;
+
         _GUID = GUIDtoChar(myfile.fileID);
         _NextEntryOffset = fileOffset;
     }
@@ -254,6 +260,7 @@ uint32_t UEFI::FileVolume::getSize(std::string GUID)
 UEFI::UEFIFirmwareImage::UEFIFirmwareImage(std::string path)
 {
     int f, err;
+
     f = open(path.c_str(), O_RDONLY);
     if (f == -1)
         throw; //"Error: Can't open %s", path.c_str();
@@ -285,7 +292,7 @@ void UEFI::UEFIFirmwareImage::dumpRomFV()
     std::vector<FileVolume>::iterator it;
     for (it = UefiFV.begin(); it != UefiFV.end(); ++it)
     {
-        printf("FileVolume %s Found at %llx with a size of %llx\n",
+        printf("FileVolume %s Found at %lx with a size of %lx\n",
                it->GUID().c_str(), it->Offset(), it->Length());
         std::string currentLocalFileGUID = it->getCurrentLocalFilesGUID();
         while (currentLocalFileGUID != "")

@@ -4,53 +4,33 @@ project(
     default_options: [
         'warning_level=3',
         'werror=true',
-        'cpp_std=c++17'
+        'cpp_std=c++20',
+	'b_lto=true',
+	'b_lto_mode=default',
+        'b_lto_threads=0'
     ],
     license: 'Apache-2.0',
     version: '1.0',
 )
 
-# Wno-psabi reduces the number of "Note:" messages when cross-compiling some STL
-# stuff for ARM. See https://stackoverflow.com/questions/48149323/strange-gcc-warning-when-compiling-qt-project
-# Basically, gcc 6 and gcc 7 are not ABI compatible, but since the whole OpenBMC
-# project uses the same compiler, we can safely ignmore these info notes.
-add_project_arguments('-Wno-psabi', language: 'cpp')
+cxx = meson.get_compiler('cpp')
 
-deps = [dependency('phosphor-dbus-interfaces'),
-        dependency('phosphor-logging'),
-        dependency('sdbusplus'),
-        dependency('systemd'),
-]
+add_project_arguments('-Wno-psabi', language: [ 'cpp' ])
+
+cpp = meson.get_compiler('cpp')
 
 executable('hpe-uefi-version',
            'src/hpe-uefi-version.cpp',
            'src/uefi.cpp',
         implicit_include_directories: false,
         include_directories: ['include'],
-        dependencies: deps,
         install: true,
         install_dir: get_option('bindir'))
 
-systemd = dependency('systemd')
-systemd_system_unit_dir = systemd.get_pkgconfig_variable(
-    'systemdsystemunitdir',
-    define_variable: ['prefix', get_option('prefix')])
+executable('hpe-platdef-extract',
+           'src/hpe-platdef-extract.cpp',
+        implicit_include_directories: false,
+        include_directories: ['include'],
+        install: true,
+        install_dir: get_option('bindir'))
 
-# Copy the service unit file
-configure_file(
-    copy: true,
-    input: 'service_files/com.hpe.hpe-uefi-version.service',
-    install: true,
-    install_dir: systemd_system_unit_dir,
-    output: 'com.hpe.hpe-uefi-version.service'
-)
-
-# Copy the shell script that drives the service
-configure_file(
-    copy: true,
-    input: 'src/hpe-publish-uefi-version',
-    install: true,
-    install_mode: 'rwxr-xr-x',
-    install_dir: get_option('bindir'),
-    output: 'hpe-publish-uefi-version'
-)
