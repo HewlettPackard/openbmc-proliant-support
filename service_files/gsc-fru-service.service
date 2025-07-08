@@ -1,0 +1,17 @@
+[Unit]
+Description=GSC FRU Service
+StopWhenUnneeded=true
+After=dbus.service
+Before=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Type=dbus
+BusName=xyz.openbmc_project.GscFruDevice
+ExecStart=/usr/bin/gsc_fru_service
+Restart=always
+RestartSec=10
+User=root
+Group=root
+
+[Install]
+WantedBy=basic.target
