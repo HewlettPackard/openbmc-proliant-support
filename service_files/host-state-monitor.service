@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenBMC Host State Monitor
+After=network.target xyz.openbmc_project.Chassis.Control.Power@0.service
+Wants=network.target xyz.openbmc_project.Chassis.Control.Power@0.service
+Requires=xyz.openbmc_project.Chassis.Control.Power@0.service
+
+[Service]
+Type=simple
+ExecStart=@bindir@/host_state_monitor
+Restart=always
+RestartSec=10
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
