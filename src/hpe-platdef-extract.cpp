@@ -79,6 +79,8 @@ UINT8 platbuf[PLATDEF_UPDATE_BUF_SZ];
 
 #define MAX_DEVICE_NAME_LEN 256
 
+#define HOST_PRIME_PATH     "/dev/mtd/by-name/host-prime"
+
 static inline void Sleep_Ms(const unsigned int milliseconds)
 {
     usleep( milliseconds * USLEEP_MILLISECONDS );
@@ -129,11 +131,11 @@ static UEFI_RC uefi_util_file_find( const EFI_GUID* pFwVolGUID, const EFI_GUID* 
     // Caller desires FV offset/length
     getFV = (memcmp(pFwFileGUID, &EFIGUID_Get_FV, sizeof(EFI_GUID)) == 0) ? 1 : 0;
 
-    printf("Reading from /dev/mtd/host-prime starting at: FVOffset: %d, FVOffsetEnd: %d\n", FVOffset, FVOffsetEnd);
+    printf("Reading from %s starting at: FVOffset: %d, FVOffsetEnd: %d\n", HOST_PRIME_PATH, FVOffset, FVOffsetEnd);
 
-    fptr = fopen("/dev/mtd/host-prime", "rb");
+    fptr = fopen(HOST_PRIME_PATH, "rb");
     if (!fptr) {
-        printf("Failed to open device: /dev/mtd/host-prime\n");
+        printf("Failed to open device: %s\n", HOST_PRIME_PATH);
         return UEFI_RC_ERROR;
     }
 
