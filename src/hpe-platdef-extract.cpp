@@ -87,7 +87,8 @@ static inline void Sleep_Ms(const unsigned int milliseconds)
 }
 
 static UEFI_RC uefi_util_file_find( const EFI_GUID* pFwVolGUID, const EFI_GUID* pFwFileGUID,
-                                    UINT32* pOffset, UINT32* pSize, UINT8* pChecksum )
+                                    UINT32* pOffset, UINT32* pSize, UINT8* pChecksum,
+                                    UINT16 platform_id )
 {
     UEFI_RC rc = UEFI_RC_NOTFOUND;
     int read_result, write_result;
@@ -430,9 +431,59 @@ static UEFI_RC uefi_util_file_find( const EFI_GUID* pFwVolGUID, const EFI_GUID* 
     // read all of the compressed platdef data into the platdef buffer.
     read_result = fread(platbuf, 1, *pSize, fptr);
     if( read_result != 0 ) {
-        // now write it out to a file
-        write_result = fwrite(platbuf, 1, *pSize, pfptr);
-        if (write_result != (int)*pSize) {
+        UINT32 write_offset = 0;
+        UINT32 write_size   = (UINT32)read_result;
+
+        // Check for a multi-platform PlatDef bundle.  A bundled APML file is
+        // a sequence of [ PlatDefBundleHeader + PlatDefTableData ] blocks, one
+        // per supported platform SKU, terminated by PlatDefBundleEndMarker.
+        // The 12-bit platform_id is read from the CPLD ID strap registers
+        // (EXPBUS IB1/IB2) by the caller and passed in here so we can select
+        // only the data block that belongs to the running server.
+        PlatDefBundleHeader* bh = (PlatDefBundleHeader*)platbuf;
+        if( (UINT32)read_result >= sizeof(PlatDefBundleHeader) &&
+            strncmp(bh->Signature, PlatDefBundleSignature, sizeof(bh->Signature)) == 0 ) {
+
+            printf("PlatDefBundle detected, searching for platform_id 0x%04X\n", platform_id);
+            bool found = false;
+            UINT32 bundle_offset = 0;
+
+            while( !found ) {
+                bh = (PlatDefBundleHeader*)(platbuf + bundle_offset);
+
+                // Bounds + signature check before accessing fields
+                if( bundle_offset + sizeof(PlatDefBundleHeader) > (UINT32)read_result ||
+                    strncmp(bh->Signature, PlatDefBundleSignature, sizeof(bh->Signature)) != 0 ) {
+                    printf("No bundle entry matched platform_id 0x%04X\n", platform_id);
+                    fclose(pfptr);
+                    fclose(fptr);
+                    return UEFI_RC_NOTFOUND;
+                }
+
+                for( int i = 0; i < bh->Count; i++ ) {
+                    if( bh->PlatformId[i] == platform_id ) {
+                        UINT32 hdr_bytes = (UINT32)bh->HeaderLength * 16;
+                        write_offset = bundle_offset + hdr_bytes;
+                        write_size   = bh->TotalSize - hdr_bytes;
+                        printf("Platform ID 0x%04X matched: data offset within blob=0x%X, size=0x%X\n",
+                               platform_id, write_offset, write_size);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if( !found ) {
+                    // No match in this bundle; advance to the next one
+                    bundle_offset += bh->TotalSize;
+                    printf("No match, advancing to next bundle at blob offset 0x%X\n", bundle_offset);
+                }
+            }
+        }
+
+        // Write the selected slice (whole blob if not bundled, or the
+        // platform-specific PlatDefTableData if a bundle was resolved).
+        write_result = fwrite(platbuf + write_offset, 1, write_size, pfptr);
+        if (write_result != (int)write_size ) {
             printf("Failed to write out all platdef data\n");
         }
         fflush(pfptr);
@@ -446,6 +497,7 @@ static UEFI_RC uefi_util_file_find( const EFI_GUID* pFwVolGUID, const EFI_GUID* 
 
 UEFI_RC uefi_util_file_find_with_retries( const EFI_GUID* pFwVolGUID, const EFI_GUID* pFwFileGUID,
                                           UINT32* pOffset, UINT32* pSize, UINT8* pChecksum,
+                                          UINT16 platform_id,
                                           unsigned int retry_count, unsigned int ms_retry_interval )
 {
     UINT32  retry= 5;
@@ -453,7 +505,7 @@ UEFI_RC uefi_util_file_find_with_retries( const EFI_GUID* pFwVolGUID, const EFI_
 
     printf("\nSTART uefi_util_file_find_with_retries\n");
     do {
-        rc = uefi_util_file_find(pFwVolGUID, pFwFileGUID, pOffset, pSize, pChecksum);
+        rc = uefi_util_file_find(pFwVolGUID, pFwFileGUID, pOffset, pSize, pChecksum, platform_id);
         if( rc == UEFI_RC_OK ) {
             printf("found uefi_util\n");
             break;
@@ -483,18 +535,38 @@ int main(void)
     HPE_BIOS_PARTS_NVRAM_CFG bios_parts_nvram_cfg;
     UEFI_RC rc;
     UINT8 checksum;
+    UINT16 platform_id = 0;
+
+    printf("UEFI: platdef-extract 2.0\n");
+
+    // The BOARD environment variable is set at boot by set-environment.service
+    // from /sys/.../xreg/server_id — the same CPLD ID strap source that iLO
+    // reads via gpio_exp_get(EXPBUS_IB1/IB2).  It is a hex string, e.g.
+    // BOARD=0x0285 for a DL345 Gen12.
+    const char* board_env = getenv("BOARD");
+    if( !board_env ) {
+        printf("BOARD environment variable not set\n");
+        return 1;
+    }
+    platform_id = (UINT16)strtoul(board_env, NULL, 0);
+    printf("Using platform_id: 0x%04X (BOARD=%s)\n", platform_id, board_env);
 
     memset(&bios_parts_nvram_cfg,0,sizeof(bios_parts_nvram_cfg));
     printf("UEFI: Check for APML file in NAND.\n");
 
-    rc = uefi_util_file_find_with_retries(&EFIGUID_FV_APML, &EFIGUID_File_APML, &offset, &size, &checksum, VOL_DE_READ_RETRIES, VOL_DE_READ_MS_DELAY);
+    rc = uefi_util_file_find_with_retries(&EFIGUID_FV_APML, &EFIGUID_File_APML, &offset, &size, &checksum,
+                                          platform_id, VOL_DE_READ_RETRIES, VOL_DE_READ_MS_DELAY);
     if (rc && (rc != UEFI_RC_POWER_ON)) {
         printf("UEFI: Base Platdef not found. Unexpected!\n");
         return UEFI_RC_ERROR;
     }
 
-    // At this point the compressed platdef data is in a file
-    // so all we need to do is read it in and uncompress it into the memory buffer.
+    // At this point the platform-specific platdef data is in PLATDEF_DATA_FILE.
+    // If the BIOS image contained a multi-platform bundle, only the slice
+    // matching platform_id has been written out.
+    // Note: the data is still in its compressed form as it exists in the BIOS
+    // FV.  Decompression is performed later when the file is read and loaded
+    // into the platdef memory buffer.
 
     return (int)rc;
 }

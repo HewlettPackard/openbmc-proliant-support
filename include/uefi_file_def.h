@@ -205,5 +205,32 @@ typedef struct {
 ///
 #define EFI_FVH_REVISION  0x02
 
+//
+// PlatDef Bundle Header - present when a single APML FV file covers multiple
+// platform SKUs (e.g. DL325 Gen12 and DL345 Gen12 share one BIOS image).
+// The APML file is then structured as a sequence of:
+//   [PlatDefBundleHeader + PlatDefTableData] per platform, ending with
+//   a block whose Signature is PlatDefBundleEndMarker.
+//
+//  HeaderLength is in 16-byte paragraphs: the PlatDefTableData starts at
+//    bundle_start + (HeaderLength * 16).
+// TotalSize covers the entire bundle: header + its PlatDefTableData.
+// PlatformId[] is a variable-length array; Count gives the number of entries.
+// A single bundle may cover more than one platform ID.
+//
+#pragma pack(1)
+typedef struct {
+    char    Signature[16];   // "$PlatdefBundle1$" (PlatDefBundleSignature)
+    UINT32  TotalSize;       // size of header + associated PlatDefTableData
+    UINT16  Flags;
+    UINT8   HeaderLength;    // header size in 16-byte paragraphs
+    UINT8   Count;           // number of PlatformId entries
+    UINT16  PlatformId[1];   // variable-length array of platform IDs
+} PlatDefBundleHeader;
+#pragma pack()
+
+#define PlatDefBundleSignature  "$PlatdefBundle1$"
+#define PlatDefBundleEndMarker  "$EndOfTheBundle$"
+
 #endif  // __UEFI_FILE_DEF_H__
 
